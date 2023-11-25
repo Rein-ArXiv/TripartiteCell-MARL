@@ -23,7 +23,6 @@ class CellEnv(gym.Env):
         self.eta = 5
         
         # Env parameters
-        self.reward_scale = 0.01
         self.terminated = None
         self.truncated = None
 
