@@ -149,9 +149,6 @@ class CellEnv(gym.Env):
         return factor
     
     def _phase_couple(self, cell_num, phase_list, amp_list, cell_action):
-        # alpha -> bta, dta
-        # beta -> dtb, atb
-        # delta -> atd, btd
         first_action, second_action = self._interaction(cell_action)
         interaction_1 = self.kapa * first_action * amp_list[(cell_num + 1) % 3] / amp_list[cell_num] * np.sin(phase_list[(cell_num + 1) % 3] - phase_list[cell_num])
         interaction_2 = self.kapa * second_action * amp_list[(cell_num + 2) % 3] / amp_list[cell_num] * np.sin(phase_list[(cell_num + 2) % 3] - phase_list[cell_num])
@@ -183,8 +180,8 @@ class CellEnv(gym.Env):
 
     def _interaction(self, cell_action):
         action_type = np.argmax(cell_action)
-        first_action = action_type // 3 - 1
-        second_action = action_type % 3 - 1
+        first_action = action_type // 3 - 1 # if cell name is (alpha, beta, delta), then first action means (alpha to beta, beta to delta, delta to alpha) cell. 
+        second_action = action_type % 3 - 1 # if cell name is (alpha, beta, delta), then second action means (alpha to delta, beta to alpha, delta to beta) cell.
         return first_action, second_action
 
 if __name__ == "__main__":
