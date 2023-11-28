@@ -6,8 +6,10 @@ from gymnasium import spaces
 class CellEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
     
-    def __init__(self, islet_num=20, max_time=200, glucose_fix=False):
+    def __init__(self, islet_num=20, max_time=200, glucose_fix=False, reward_mode=None):
         super(CellEnv, self).__init__()
+
+        assert reward_mode in ["global", "local"], "Choose reward mode [global, local]"
 
         self.cell_num = 3
         self.cell_interaction_type_num = 9
@@ -23,6 +25,7 @@ class CellEnv(gym.Env):
         self.eta = 5
         
         # Env parameters
+        self.reward_mode = reward_mode
         self.terminated = None
         self.truncated = None
 
@@ -46,7 +49,7 @@ class CellEnv(gym.Env):
 
         for i in range(self.islet_num):
             cell_phase = np.random.uniform(0.0, 2*np.pi, 3)
-            cell_amp = np.random.uniform(0.0, 0.5, 3)
+            cell_amp = np.random.uniform(0.0, 1.0, 3)
             
             self.phases.append(cell_phase)
             self.amps.append(cell_amp)
@@ -71,19 +74,25 @@ class CellEnv(gym.Env):
         assert self.state is not None, "Call reset before using step method"
 
         self.info = {}
-        total_reward = 0
         self.total_glucose_delta = 0
         
         hormone_before = self.hormones.copy()
         for i in range(self.islet_num):
             alpha_action, beta_action, delta_action = np.array(actions[i])
-            alpha_phase_delta = self.phase_oscilation(0, self.phases[i], self.amps[i], self.glucose, alpha_action)
-            beta_phase_delta = self.phase_oscilation(1, self.phases[i], self.amps[i], self.glucose, beta_action)
-            delta_phase_delta = self.phase_oscilation(2, self.phases[i], self.amps[i], self.glucose, delta_action)
+
+            alpha_to_beta_action, alpha_to_delta_action = self._interaction(alpha_action)
+            beta_to_delta_action, beta_to_alpha_action = self._interaction(beta_action)
+            delta_to_alpha_action, delta_to_beta_action = self._interaction(delta_action)
+
+            #print(f"actions: {alpha_to_beta_action, alpha_to_delta_action, beta_to_delta_action, beta_to_alpha_action, delta_to_alpha_action, delta_to_beta_action}")
+
+            alpha_phase_delta = self.phase_oscilation(0, self.phases[i], self.amps[i], self.glucose, beta_to_alpha_action, delta_to_alpha_action)
+            beta_phase_delta = self.phase_oscilation(1, self.phases[i], self.amps[i], self.glucose, delta_to_beta_action, alpha_to_beta_action)
+            delta_phase_delta = self.phase_oscilation(2, self.phases[i], self.amps[i], self.glucose, alpha_to_delta_action, beta_to_delta_action)
             
-            alpha_amp_delta = self.amp_oscilation(0, self.phases[i], self.amps[i], self.glucose, alpha_action)
-            beta_amp_delta = self.amp_oscilation(1, self.phases[i], self.amps[i], self.glucose, beta_action)
-            delta_amp_delta = self.amp_oscilation(2, self.phases[i], self.amps[i], self.glucose, delta_action)
+            alpha_amp_delta = self.amp_oscilation(0, self.phases[i], self.amps[i], self.glucose, beta_to_alpha_action, delta_to_alpha_action)
+            beta_amp_delta = self.amp_oscilation(1, self.phases[i], self.amps[i], self.glucose, delta_to_beta_action, alpha_to_beta_action)
+            delta_amp_delta = self.amp_oscilation(2, self.phases[i], self.amps[i], self.glucose, alpha_to_delta_action, beta_to_delta_action)
             
             self.phases[i][0] += alpha_phase_delta
             self.phases[i][1] += beta_phase_delta
@@ -106,7 +115,8 @@ class CellEnv(gym.Env):
         if self.glucose < 0:
             self.glucose = 0.
         
-        reward = np.clip(-abs(self.total_glucose_delta) - (np.sum(self.hormones) / self.islet_num), -3.0, 0.0)
+        global_reward = np.clip((-abs(self.total_glucose_delta) - (np.sum(self.hormones) / self.islet_num)), -3.0, 0.0)
+        local_reward = (-abs(self.total_glucose_delta) - (np.sum(self.hormones, axis=1)))
         self.curr_time += 1
         
         self.state = np.hstack((self.hormones, np.full((self.islet_num, 1), self.glucose)))
@@ -118,16 +128,21 @@ class CellEnv(gym.Env):
         self.info["hormones"] = self.hormones
         self.info["glucose"] = self.glucose
 
+        if self.reward_mode == "global":
+            reward = global_reward
+        elif self.reward_mode == "local":
+            reward = local_reward
+
         return self.state, reward, self.terminated, self.truncated, self.info
                 
-    def phase_oscilation(self, cell_num, phase_list, amp_list, glucose, cell_action):
+    def phase_oscilation(self, cell_num, phase_list, amp_list, glucose, first_action, second_action):
         w_sigma = 2 * np.pi / (np.random.normal(5, 0.1))
         g_sigma = self._phase_modulation(cell_num, glucose)
-        phase_delta = w_sigma + g_sigma * np.cos(phase_list[cell_num]) + self._phase_couple(cell_num, phase_list, amp_list, cell_action)
+        phase_delta = w_sigma + g_sigma * np.cos(phase_list[cell_num]) + self._phase_couple(cell_num, phase_list, amp_list, first_action, second_action)
         return phase_delta
     
-    def amp_oscilation(self, cell_num, phase_list, amp_list, glucose, cell_action):
-        amp_delta = (self._amp_modulation(cell_num, glucose) - amp_list[cell_num] ** 2) * amp_list[cell_num] + self._amp_couple(cell_num, phase_list, amp_list, cell_action)
+    def amp_oscilation(self, cell_num, phase_list, amp_list, glucose, first_action, second_action):
+        amp_delta = (self._amp_modulation(cell_num, glucose) - amp_list[cell_num] ** 2) * amp_list[cell_num] + self._amp_couple(cell_num, phase_list, amp_list, first_action, second_action)
         return amp_delta
         
     def hormone_cal(self, phase_list, amp_list):
@@ -148,8 +163,7 @@ class CellEnv(gym.Env):
         factor = mu * (glucose - self.glucose_0)
         return factor
     
-    def _phase_couple(self, cell_num, phase_list, amp_list, cell_action):
-        first_action, second_action = self._interaction(cell_action)
+    def _phase_couple(self, cell_num, phase_list, amp_list, first_action, second_action):
         interaction_1 = self.kapa * first_action * amp_list[(cell_num + 1) % 3] / amp_list[cell_num] * np.sin(phase_list[(cell_num + 1) % 3] - phase_list[cell_num])
         interaction_2 = self.kapa * second_action * amp_list[(cell_num + 2) % 3] / amp_list[cell_num] * np.sin(phase_list[(cell_num + 2) % 3] - phase_list[cell_num])
         interaction = interaction_1 + interaction_2
@@ -171,29 +185,41 @@ class CellEnv(gym.Env):
         factor = 1/2 * abs_concentration * (1 + alpha_const*np.tanh((glucose + somato_response - self.glucose_0)/self.eta)) # factor > r^2
         return factor
     
-    def _amp_couple(self, cell_num, phase_list, amp_list, cell_action):
-        first_action, second_action = self._interaction(cell_action)
+    def _amp_couple(self, cell_num, phase_list, amp_list, first_action, second_action):
         interaction_1 = self.kapa * first_action * amp_list[(cell_num + 1) % 3] * np.cos(phase_list[(cell_num + 1) % 3] - phase_list[cell_num])
         interaction_2 = self.kapa * second_action * amp_list[(cell_num + 2) % 3] * np.cos(phase_list[(cell_num + 2) % 3] - phase_list[cell_num])
         interaction = interaction_1 + interaction_2
         return interaction
 
     def _interaction(self, cell_action):
-        action_type = np.argmax(cell_action)
-        first_action = action_type // 3 - 1 # if cell name is (alpha, beta, delta), then first action means (alpha to beta, beta to delta, delta to alpha) cell. 
-        second_action = action_type % 3 - 1 # if cell name is (alpha, beta, delta), then second action means (alpha to delta, beta to alpha, delta to beta) cell.
+        action_type = cell_action
+        first_action = action_type // 3 - 1
+        second_action = action_type % 3 - 1
         return first_action, second_action
 
 if __name__ == "__main__":
-    print("CellEnv test start.")
-    env = CellEnv()
+    print("CellEnv[reward mode=global] test start.")
+    env = CellEnv(reward_mode="global")
     print("CellEnv made. Resetting env")
     state, info = env.reset()
     print(f"CellEnv resetted. state: {state}, \ninfo: {info}")  
     print("Testing Env...")
+    print(f"Action sample: {env.action_space.sample()},\nAction shape:{env.action_space.shape}")
     while(not env.terminated and not env.truncated):
         state, reward, _, _, _ = env.step(env.action_space.sample())
-
         print(f"Reward: {reward}, \tGlucose Reward: {env.total_glucose_delta}, \tHormone Reward: {np.sum(env.hormones)/env.islet_num}")
 
-    print("CellEnv test end.")
+    print("CellEnv[reward mode=global] test end.")
+
+    print("CellEnv[reward mode=local] test start.")
+    env = CellEnv(reward_mode="local")
+    print("CellEnv made. Resetting env")
+    state, info = env.reset()
+    print(f"CellEnv resetted. state: {state}, \ninfo: {info}")  
+    print("Testing Env...")
+    print(f"Action sample: {env.action_space.sample()},\nAction shape:{env.action_space.shape}")
+    while(not env.terminated and not env.truncated):
+        state, reward, _, _, _ = env.step(env.action_space.sample())
+        print(f"Reward: {reward}, \tGlucose Reward: {env.total_glucose_delta}, \tHormone Reward: {np.sum(env.hormones, axis=1)}")
+
+    print("CellEnv[reward mode=local] test end.")
