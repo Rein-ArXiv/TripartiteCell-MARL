@@ -6,7 +6,7 @@ from gymnasium import spaces
 class CellEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 1}
     
-    def __init__(self, islet_num=20, max_time=200, glucose_fix=False, reward_mode=None):
+    def __init__(self, islet_num=20, max_time=200, reward_mode=None):
         super(CellEnv, self).__init__()
 
         assert reward_mode in ["global", "local"], "Choose reward mode [global, local]"
@@ -19,8 +19,6 @@ class CellEnv(gym.Env):
         self.state = None
         self.glucose_0 = 4.     # default glucose level
         self.max_time = max_time
-        self.glucose_fix = glucose_fix
-        
         self.kapa = 0.4 # changable
         self.eta = 5
         
@@ -29,15 +27,15 @@ class CellEnv(gym.Env):
         self.terminated = None
         self.truncated = None
 
-    def reset(self, glucose_level=None, seed=None):
+    def reset(self, glucose_fix=False, glucose_level=None, seed=None):
         self.curr_time = 0
         self.terminated = False
         self.truncated = False
         self.info = {}
         
-        if self.glucose_fix:
+        if glucose_fix:
             glucose_init = glucose_level
-            assert glucose_init is not None, 'glucose fix is True but glucose level is not assigned.'
+            assert type(glucose_init) is float, 'glucose fix is True but glucose level is not assigned or not float.'
         else:
             glucose_init = random.uniform(0.0, 8.0)
             
@@ -76,7 +74,6 @@ class CellEnv(gym.Env):
         self.info = {}
         self.total_glucose_delta = 0
         
-        hormone_before = self.hormones.copy()
         for i in range(self.islet_num):
             alpha_action, beta_action, delta_action = np.array(actions[i])
 
@@ -103,7 +100,7 @@ class CellEnv(gym.Env):
             self.amps[i][2] += delta_amp_delta
             
             self.phases[self.phases >= 2 * np.pi] = self.phases[self.phases >= 2 * np.pi] % (2 * np.pi)
-            self.phases[self.phases < 0] = self.phases[self.phases < 0] + (2 * np.pi)
+            self.phases[self.phases < 0] = self.phases[self.phases < 0] + (2 * np.pi) * (abs(self.phases[self.phases < 0]) // (2 * np.pi) + 1) 
             self.amps[self.amps < 0] = 1e-5
             
             self.hormones[i] = self.hormone_cal(self.phases[i], self.amps[i])
