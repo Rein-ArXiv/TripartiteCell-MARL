@@ -8,8 +8,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
-from memory import ReplayBuffer
-from model import DDQN
+from .memory import ReplayBuffer
+from .model import DDQN
 
 class IQL:
     def __init__(self, env, is_train=None, cuda=False, cuda_num=None):
@@ -29,8 +29,8 @@ class IQL:
 
         print(f"Using {self.device}.")
 
-    def train(self, batch_size=256, target_update_freq=2000, gamma=0.95, memory_capacity=2e5, max_epi=1000, eps_linear=True,\
-        param_location="../../../parameters/iql"):
+    def train(self, batch_size=256, target_update_freq=2000, gamma=0.95, memory_capacity=2e5, max_epi=1000, eps_linear=True, external_glu=0,\
+        param_location="../../../parameters/iql", param_suffix=None):
 
         assert self.is_train, "Initialized in test mod."
 
@@ -100,14 +100,14 @@ class IQL:
 
                                    
             actions = self._select_action(state)
-            next_state, reward, terminated, truncated, info = self.step(actions)
+            next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
             if self.env.reward_mode == "global":
                 episode_reward += reward
             elif self.env.reward_mode == "local":
                 episode_reward += np.average(reward)
 
             if (terminated or truncated) and (int(self.episode % 10) == 0):
-                self._param_save(param_location)   
+                self._param_save(param_location=param_location, param_suffix=param_suffix)
             
             state = next_state
 
@@ -133,8 +133,8 @@ class IQL:
                 print("Train reached max episode. Train End")
                 break
         
-    def step(self, actions):
-        next_state, reward, terminated, truncated, info = self.env.step(actions)
+    def step(self, actions, external_glucose):
+        next_state, reward, terminated, truncated, info = self.env.step(actions, external_glucose)
         if self.is_train:
             for i in range(self.islet_num):
                 if self.reward_mode == "local":
@@ -168,7 +168,7 @@ class IQL:
 
         print(f"Parameter Saved. Location is '{abs_path}'")
 
-    def test(self, param_location=None, param_suffix=None, action_log_path=None):
+    def test(self, param_location=None, param_suffix=None, external_glu=0):
         assert not self.is_train, "Initialized in train mode."
         episode_reward = 0
         
@@ -186,7 +186,7 @@ class IQL:
 
         while not (terminated or truncated):
             actions = self._select_action(state)
-            next_state, reward, terminated, truncated, info = self.step(actions)
+            next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
             
             if self.env.reward_mode == "global":
                 score += reward
