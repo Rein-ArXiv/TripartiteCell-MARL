@@ -80,7 +80,7 @@ class IQL:
 
         wandb.init(project="Tripartite Cell IQL")
 
-        max_frame = int(max_epi * self.env.max_time)
+        max_frame = int((max_epi + 1) * self.env.max_time)
         terminated = True
         truncated = True
         
@@ -168,7 +168,8 @@ class IQL:
 
         print(f"Parameter Saved. Location is '{abs_path}'")
 
-    def test(self, param_location=None, param_suffix=None, external_glu=0):
+    def test(self, param_location=None, param_suffix=None, external_glu=0, glucose_fix=False, glucose_level=None,\
+        plot=False, plot_dir=None, plot_subdir=None):
         assert not self.is_train, "Initialized in train mode."
         episode_reward = 0
         
@@ -178,16 +179,21 @@ class IQL:
 
         self.param_load(param_location=param_location, param_suffix=param_suffix)
         
+        if plot:
+            self._plot_init()
+
         print("--- Test Start ---")
-        state, info = self.env.reset()
+        state, info = self.env.reset(glucose_fix, glucose_level)
         terminated = False
         truncated = False
         score = 0
 
+        self._plot_log(info, plot)
         while not (terminated or truncated):
             actions = self._select_action(state)
             next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
             
+            self._plot_log(info, plot)
             if self.env.reward_mode == "global":
                 score += reward
             elif self.env.reward_mode == "local":
@@ -195,6 +201,8 @@ class IQL:
 
             state = next_state
         
+        if plot:
+            self._plot(plot_dir, plot_subdir)
         print(f"Score: {score}")
         self.env.close()
     
@@ -323,3 +331,112 @@ class IQL:
         self.alpha_cell_target_dqn.load_state_dict(self.alpha_cell_online_dqn.state_dict())
         self.beta_cell_target_dqn.load_state_dict(self.beta_cell_online_dqn.state_dict())
         self.delta_cell_target_dqn.load_state_dict(self.delta_cell_online_dqn.state_dict())
+
+    def _plot_init(self):
+        self.alpha_cell_phases = []
+        self.beta_cell_phases = []
+        self.delta_cell_phases = []
+
+        self.alpha_cell_amplitudes = []
+        self.beta_cell_amplitudes = []
+        self.delta_cell_amplitudes = []
+
+        self.alpha_cell_hormones = []
+        self.beta_cell_hormones = [] 
+        self.delta_cell_hormones = []
+
+        self.glucoses = []
+
+        for i in range(self.islet_num):
+            self.alpha_cell_phases.append([])
+            self.beta_cell_phases.append([])
+            self.delta_cell_phases.append([])
+
+            self.alpha_cell_amplitudes.append([])
+            self.beta_cell_amplitudes.append([])
+            self.delta_cell_amplitudes.append([])
+
+            self.alpha_cell_hormones.append([])
+            self.beta_cell_hormones.append([]) 
+            self.delta_cell_hormones.append([])
+
+    def _plot_log(self, info, plot):
+        if plot:
+            phases = info["phase"] # shape(20, 3)
+            amplitudes = info["amplitudes"] # shape(20, 3)
+            hormones = info["hormones"] # shape(20, 3)
+            glucose = info["glucose"] 
+            
+            self.glucoses.append(glucose)
+
+            for i in range(self.islet_num):
+                self.alpha_cell_phases[i].append(phases[i][0])
+                self.beta_cell_phases[i].append(phases[i][1])
+                self.delta_cell_phases[i].append(phases[i][2])
+
+                self.alpha_cell_amplitudes[i].append(amplitudes[i][0])
+                self.beta_cell_amplitudes[i].append(amplitudes[i][1])
+                self.delta_cell_amplitudes[i].append(amplitudes[i][2])
+
+                self.alpha_cell_hormones[i].append(hormones[i][0])
+                self.beta_cell_hormones[i].append(hormones[i][1])
+                self.delta_cell_hormones[i].append(hormones[i][2])
+
+    def _plot(self, plot_dir=None, plot_subdir=None):
+        assert plot_dir != None, "Set plot save directory"
+        if plot_subdir != None:
+            path = f"{plot_dir}/{plot_subdir}"
+        else:
+            path = f"{plot_dir}"
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+        abs_path = os.path.dirname(os.path.abspath(path)) 
+        
+        # glucose plot
+        plt.figure(figsize=(12,8)) # 
+        plt.title("Glucose graph")
+        plt.xlabel("time (min)")
+        plt.ylabel("Glucose")
+        plt.ylim((-0.5, 8.5))
+        plt.plot(self.glucoses)
+        plt.savefig(f"{path}/glucose.png")
+        plt.close()
+
+        # phase, amplitude plot (islet num)
+        for i in range(self.islet_num):
+            # phases
+            plt.figure(figsize=(8, 12))
+            plt.subplot(211)
+            plt.title("Phase")
+            plt.xlabel("time (min)")
+            plt.ylabel("Phase")
+            plt.ylim((-0.5, 2*np.pi+0.5))
+            plt.plot(self.alpha_cell_phases[i])
+            plt.plot(self.beta_cell_phases[i])
+            plt.plot(self.delta_cell_phases[i])
+
+            # amplitudes
+            plt.subplot(212)
+            plt.title("Amplitude")
+            plt.xlabel("time (min)")
+            plt.ylabel("Amplitudes")
+            plt.ylim((-0.1, 1.8))
+            plt.plot(self.alpha_cell_amplitudes[i])
+            plt.plot(self.beta_cell_amplitudes[i])
+            plt.plot(self.delta_cell_amplitudes[i])
+
+            plt.savefig(f"{path}/phase_amp_islet_{i}.png")
+            plt.close()
+
+            # hormone plot
+            plt.figure(figsize=(12,8))
+            plt.title("Cell hormone")
+            plt.xlabel("time (min)")
+            plt.ylabel("hormone")
+            plt.ylim((-0.1, 1.8))
+            plt.plot(self.alpha_cell_hormones[i])
+            plt.plot(self.beta_cell_hormones[i])
+            plt.plot(self.delta_cell_hormones[i])
+            plt.savefig(f"{path}/hormone_islet_{i}.png")
+            plt.close()
