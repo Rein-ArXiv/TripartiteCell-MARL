@@ -1,4 +1,6 @@
 import os
+import time
+import torch
 import wandb
 import argparse
 import numpy as np
@@ -33,12 +35,16 @@ parser.add_argument("-el", "--eps_linear", action='store_true', help="Using epsi
 parser.add_argument("-pl", "--param_loc", type=str, default="../parameters/iql", help="Torch parameter saving/loading location, default='../parameters/iql'")
 parser.add_argument("-ps", "--param_suffix", type=str, default=None, help="Parameter suffix, if empty, save/load name [alpha_cell.pth, beta_cell.pth, delta_cell.pth] in param_location")
 
+# test
+parser.add_argument("-p", "--plot", action='store_true', help="Used in test mode, plotting result, action='store_true'")
+parser.add_argument("-pc", "--plot_dir", type=str, default="../image", help="Main directory plot saved, default='../image'")
+parser.add_argument("-pn", "--plot_subdir", type=str, default=None, help="Sub directory plot saved under main directory, default=None")
+
 if __name__=="__main__":
 	args = parser.parse_args()
 	env = CellEnv(
 		islet_num=args.islet_num,
 		max_time=args.max_time,
-		glucose_fix=args.glu_fix,
 		reward_mode=args.reward_mode)
 	
 	agent = IQL(
@@ -63,5 +69,9 @@ if __name__=="__main__":
 	    agent.test(
 	    	param_location=args.param_loc,
 	    	param_suffix=args.param_suffix,
-	    	external_glu=args.external_glu)
-    
+	    	external_glu=args.external_glu,
+	    	glucose_fix=args.glu_fix,
+			glucose_level=args.glu_level,
+			plot=args.plot,
+	    	plot_dir=args.plot_dir,
+	    	plot_subdir=args.plot_subdir)
