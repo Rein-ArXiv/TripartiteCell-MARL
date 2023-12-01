@@ -1,15 +1,5 @@
-import os, sys
-sys.path.append(os.pardir)
-
-import argparse
 import numpy as np
-import matplotlib.pyplot as plt
-
 import torch
-
-from envs.env import CellEnv
-from algorithms.iql.agent import IQL
-
 
 def one_tiemstep_action_share(action_list):
 	alpha_cell_action = action_list[:, 0]
@@ -83,6 +73,7 @@ def all_timestep_cell_action_frequency(all_action_list, action_share=None):
 	return all_alpha_action_frequency, all_beta_action_frequency, all_delta_action_frequency
 
 def all_timestep_cell_action_set_frequency(all_action_list, action_share=None):
+	# Not maked. To do.
 	assert action_share != None, "Put action share True/False"
 
 	all_timestep = all_action_list.shape[0]
@@ -107,7 +98,20 @@ def all_timestep_cell_action_set_frequency(all_action_list, action_share=None):
 	for all_delta_action, all_delta_count in zip(all_delta_unique_actions, all_delta_action_counts):
 		all_delta_action_frequency[all_delta_action] = all_delta_count
 
-def action_to_cell
+
+def param_load(alpha_cell_network, beta_cell_network, delta_cell_network, device, param_location=None, param_suffix=None):
+	if param_location == None:
+		param_location = str(f'../../parameters/iql') # default location
+
+	if param_suffix:
+		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell_{param_suffix}.pth")).to(device)
+		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell_{param_suffix}.pth")).to(device)
+		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell_{param_suffix}.pth")).to(device)
+
+	else:
+		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell.pth")).to(device)
+		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell.pth")).to(device)
+		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell.pth")).to(device)
 
 if __name__=="__main__":
 	action_list = np.random.randint(low=0, high=9, size=(20,3), dtype=int)
