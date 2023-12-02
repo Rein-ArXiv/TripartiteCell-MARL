@@ -99,19 +99,40 @@ def all_timestep_cell_action_set_frequency(all_action_list, action_share=None):
 		all_delta_action_frequency[all_delta_action] = all_delta_count
 
 
-def param_load(alpha_cell_network, beta_cell_network, delta_cell_network, device, param_location=None, param_suffix=None):
+def param_load(alpha_cell_network, beta_cell_network, delta_cell_network, param_location=None, param_suffix=None):
 	if param_location == None:
 		param_location = str(f'../../parameters/iql') # default location
 
 	if param_suffix:
-		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell_{param_suffix}.pth")).to(device)
-		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell_{param_suffix}.pth")).to(device)
-		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell_{param_suffix}.pth")).to(device)
+		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell_{param_suffix}.pth"))
+		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell_{param_suffix}.pth"))
+		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell_{param_suffix}.pth"))
 
 	else:
-		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell.pth")).to(device)
-		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell.pth")).to(device)
-		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell.pth")).to(device)
+		alpha_cell_network.load_state_dict(torch.load(f"{param_location}/alpha_cell.pth"))
+		beta_cell_network.load_state_dict(torch.load(f"{param_location}/beta_cell.pth"))
+		delta_cell_network.load_state_dict(torch.load(f"{param_location}/delta_cell.pth"))
+
+def network_select_action(state):
+    action_list = []
+    alpha_cell_action_list = []
+    beta_cell_action_list = []
+    delta_cell_action_list= []
+
+
+    for islet_i in range(self.islet_num):
+        alpha_cell_action = network_get_action(alpha_cell_online_dqn, state[islet_i])
+        beta_cell_action = network_get_action(beta_cell_online_dqn, state[islet_i])
+        delta_cell_action = network_get_action(delta_cell_online_dqn, state[islet_i])
+
+        action_list.append([alpha_cell_action, beta_cell_action, delta_cell_action])
+
+    return np.array(action_list)
+
+def network_get_action(ddqn, state):
+    action = ddqn((torch.from_numpy(state)).to(self.device, dtype=torch.float)).argmax()
+    action = action.detach().cpu().numpy()
+    return action
 
 if __name__=="__main__":
 	action_list = np.random.randint(low=0, high=9, size=(20,3), dtype=int)
