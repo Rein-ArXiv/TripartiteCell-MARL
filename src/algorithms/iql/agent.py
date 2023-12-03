@@ -29,8 +29,18 @@ class IQL:
 
         print(f"Using {self.device}.")
 
-    def train(self, batch_size=256, target_update_freq=2000, gamma=0.95, memory_capacity=2e5, max_epi=1000, eps_linear=True, external_glu=0,\
-        param_location="../../../parameters/iql", param_suffix=None):
+    def train(self,
+        batch_size=256,
+        target_update_freq=2000,
+        gamma=0.99,
+        learning_rate=1e-4,
+        memory_capacity=2e5,
+        max_epi=1000,
+        eps_linear=False,
+        eps_decay=0.995,
+        external_glu=0,
+        param_location="../../../parameters/iql",
+        param_suffix=None):
 
         assert self.is_train, "Initialized in test mod."
 
@@ -38,7 +48,7 @@ class IQL:
         self.max_eps = 1.0
         self.min_eps = 0.01
         self.eps = self.max_eps
-        self.eps_decay = 1 - (1 / max_epi * 5)
+        self.eps_decay = eps_decay #1 - (1 / max_epi * 5)
         self.target_update_freq = target_update_freq
         self.gamma = gamma
         self.max_norm = 0.5
@@ -66,24 +76,27 @@ class IQL:
         self.beta_cell_target_dqn.eval()
         self.delta_cell_target_dqn.eval()
 
-        self.alpha_cell_optimizer = optim.AdamW(self.alpha_cell_online_dqn.parameters(), lr=1e-4)
-        self.beta_cell_optimizer = optim.AdamW(self.beta_cell_online_dqn.parameters(), lr=1e-4)
-        self.delta_cell_optimizer = optim.AdamW(self.delta_cell_online_dqn.parameters(), lr=1e-4)
+        self.alpha_cell_optimizer = optim.AdamW(self.alpha_cell_online_dqn.parameters(), lr=learning_rate)
+        self.beta_cell_optimizer = optim.AdamW(self.beta_cell_online_dqn.parameters(), lr=learning_rate)
+        self.delta_cell_optimizer = optim.AdamW(self.delta_cell_online_dqn.parameters(), lr=learning_rate)
         
         self.alpha_memory = ReplayBuffer(self.state_dim, memory_capacity)
         self.beta_memory = ReplayBuffer(self.state_dim, memory_capacity)
         self.delta_memory = ReplayBuffer(self.state_dim, memory_capacity)
 
-
         self.update_count = 0
         self.episode = 0
 
-        wandb.init(project="Tripartite Cell IQL")
+        wandb.init(project="Tripartite Cell IQL - Server")
 
         max_frame = int((max_epi + 1) * self.env.max_time)
         terminated = True
         truncated = True
         
+        best_episode_avg_reward = np.full(10, -200)
+        current_episode_avg_reward = np.zeros(10)
+
+
         print("--Train Start--")
         for frame_idx in range(max_frame):
             if terminated or truncated:
@@ -94,12 +107,13 @@ class IQL:
                 if (self.episode != 0):
                     wandb.log({"Train Episode Reward": episode_reward})
                     print(f"Training Episode: {self.episode}/{max_epi} \tTotal reward: {episode_reward} \tEpsiilon:{self.eps}")
-                
+                    current_episode_avg_reward[self.episode % 10] = episode_reward
                 self.episode += 1
                 episode_reward = 0
 
                                    
             actions = self._select_action(state)
+
             next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
             if self.env.reward_mode == "global":
                 episode_reward += reward
@@ -107,7 +121,10 @@ class IQL:
                 episode_reward += np.average(reward)
 
             if (terminated or truncated) and (int(self.episode % 10) == 0):
-                self._param_save(param_location=param_location, param_suffix=param_suffix)
+                if (np.average(current_episode_avg_reward) > np.average(best_episode_avg_reward)):
+                    best_episode_avg_reward = np.copy(current_episode_avg_reward)
+                    self._param_save(param_location=param_location, param_suffix=param_suffix)
+                self._param_save(param_location=param_location, param_suffix=f"{param_suffix}_final")
             
             state = next_state
 
@@ -168,8 +185,18 @@ class IQL:
 
         print(f"Parameter Saved. Location is '{abs_path}'")
 
-    def test(self, param_location=None, param_suffix=None, external_glu=0, glucose_fix=False, glucose_level=None,\
-        plot=False, plot_dir=None, plot_subdir=None):
+    def test(self,
+        param_location=None,
+        param_suffix=None,
+        external_glu=0,
+        glucose_fix=False,
+        glucose_level=None,
+        action_share=False,
+        action_view=False,
+        plot=False,
+        plot_dir=None,
+        plot_subdir=None):
+        
         assert not self.is_train, "Initialized in train mode."
         episode_reward = 0
         
@@ -191,6 +218,17 @@ class IQL:
         self._plot_log(info, plot)
         while not (terminated or truncated):
             actions = self._select_action(state)
+
+            if action_share:
+                actions = one_tiemstep_action_share(actions)
+
+            if action_view:
+                if action_share:
+                    print(actions[0])
+                else:
+                    print(actions)
+
+
             next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
             
             self._plot_log(info, plot)
@@ -302,7 +340,7 @@ class IQL:
                     delta_cell_action_list.append(delta_cell_action)
 
                     action_list.append([alpha_cell_action, beta_cell_action, delta_cell_action])
-            
+
             for i in range(self.islet_num):
                 self.alpha_transition[i] = [state[i], alpha_cell_action_list[i]]
                 self.beta_transition[i] = [state[i], beta_cell_action_list[i]]
@@ -323,10 +361,6 @@ class IQL:
         action = action.detach().cpu().numpy()
         return action
         
-    def _get_q_value(self, ddqn, state):
-        q_value = ddqn((torch.from_numpy(state)).to(self.device, dtype=torch.float)).detach().cpu()
-        return q_value
-
     def _target_network_update(self):
         self.alpha_cell_target_dqn.load_state_dict(self.alpha_cell_online_dqn.state_dict())
         self.beta_cell_target_dqn.load_state_dict(self.beta_cell_online_dqn.state_dict())
@@ -440,3 +474,21 @@ class IQL:
             plt.plot(self.delta_cell_hormones[i])
             plt.savefig(f"{path}/hormone_islet_{i}.png")
             plt.close()
+        
+        
+def one_tiemstep_action_share(action_list):
+    alpha_cell_action = action_list[:, 0]
+    beta_cell_action = action_list[:, 1]
+    delta_cell_action = action_list[:, 2]
+
+    alpha_unique_actions, alpha_action_counts = np.unique(alpha_cell_action, return_counts=True)
+    beta_unique_actions, beta_action_counts = np.unique(beta_cell_action, return_counts=True)
+    delta_unique_actions, delta_action_counts = np.unique(delta_cell_action, return_counts=True)
+
+    alpha_most_action = alpha_unique_actions[np.argmax(alpha_action_counts)]
+    beta_most_action = beta_unique_actions[np.argmax(beta_action_counts)]
+    delta_most_action = delta_unique_actions[np.argmax(delta_action_counts)]
+
+    action_share_array = np.array([[alpha_most_action, beta_most_action, delta_most_action]] * action_list.shape[0])
+
+    return action_share_array
