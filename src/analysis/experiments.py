@@ -22,6 +22,32 @@ class Experiment:
         param_load(self.alpha_cell_network, self.beta_cell_network, self.delta_cell_network,
                    param_location=param_location, param_suffix=param_suffix)
     
+    def rl_action_view(self):
+        for glu_index, add_glucose in enumerate([-self.env.glucose_0, 0, self.env.glucose_0]):
+            # RL action no share
+            state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
+            
+            terminated = False
+            truncated = False
+            score = 0
+            
+            state_action_record = dict()
+            q_value_record = []
+
+            while not (terminated or truncated):
+                actions, q_value = self.network_select_action(state)
+                state_action_record
+
+                state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
+            
+            if glu_index == 0:
+                self.rl_no_share_low = score
+                
+            elif glu_index == 1:
+                self.rl_no_share_normal = score
+            elif glu_index == 2:
+                self.rl_no_share_high = score
+
     def score(self):
         self._init_log()
         for glu_index, add_glucose in enumerate([-self.env.glucose_0, 0, self.env.glucose_0]):
@@ -405,18 +431,18 @@ class Experiment:
 
         if experiment_type == "hormone":
             plt.grid(linestyle=':', color="grey")
-            plt.xlim(-0.1, 1.0)
-            plt.ylim(-0.1, 1.0)
+            #plt.xlim(-0.1, 1.0)
+            #plt.ylim(-0.1, 1.0)
 
         elif experiment_type == "glu_fluc":
-            plt.xlim(0.001, 1)
-            plt.ylim(0.001, 1)
+            #plt.xlim(0.001, 1)
+            #plt.ylim(0.001, 1)
             plt.xscale('log', base=10)
             plt.yscale('log', base=10)
 
         elif experiment_type == "sync":
-            plt.xlim(0.001, 1)
-            plt.ylim(0.001, 1)
+            #plt.xlim(0.001, 1)
+            #plt.ylim(0.001, 1)
             plt.xscale('log', base=10)
             plt.yscale('log', base=10)
 
@@ -537,20 +563,22 @@ class Experiment:
 
     def network_select_action(self, state):
         action_list = []
-
+        q_value_list = []
         for islet_i in range(self.islet_num):
-            alpha_cell_action = self.network_get_action(self.alpha_cell_network, state[islet_i])
-            beta_cell_action = self.network_get_action(self.beta_cell_network, state[islet_i])
-            delta_cell_action = self.network_get_action(self.delta_cell_network, state[islet_i])
+            alpha_cell_action, alpha_cell_q_value = self.network_get_action(self.alpha_cell_network, state[islet_i])
+            beta_cell_action, beta_cell_q_value = self.network_get_action(self.beta_cell_network, state[islet_i])
+            delta_cell_action, delta_cell_q_value = self.network_get_action(self.delta_cell_network, state[islet_i])
 
             action_list.append([alpha_cell_action, beta_cell_action, delta_cell_action])
-
-        return np.array(action_list)
+            q_value_list.append([alpha_cell_q_value, beta_cell_q_value, delta_cell_q_value])
+        return np.array(action_list), np.array(q_value_list)
 
     def network_get_action(self, ddqn, state):
-        action = ddqn((torch.from_numpy(state)).to(self.device, dtype=torch.float)).argmax()
+        q_value = ddqn((torch.from_numpy(state)).to(self.device, dtype=torch.float))
+        action = q_value.argmax()
+        q_value = q_value.detach().cpu().numpy()
         action = action.detach().cpu().numpy()
-        return action
+        return action, q_value
 
     def _init_log(self):
         # red -> atb, bta = (pos, pos)
