@@ -6,10 +6,10 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 
-from util import param_load
+from util import param_load, one_tiemstep_action_share
 
 class Experiment:
-    def __init__(self, env, model, state_dim=4, action_dim=9, cuda=False, cuda_num=0, action_share=False, param_location=None, param_suffix=None, plot=False):
+    def __init__(self, env, model, state_dim=4, action_dim=9, cuda=False, cuda_num=0, param_location=None, param_suffix=None, plot=False):
         self.env = env
         self.islet_num = env.islet_num
         self.device = torch.device(f"cuda:{cuda_num}" if (cuda and torch.cuda.is_available()) else "cpu")
@@ -43,7 +43,9 @@ class Experiment:
                             score += np.average(reward)
                         print(f"Actions: {cell_action}\t Score: {score}")
                         self._log(cell_action=cell_action, glu_index=glu_index, log_item=score)
+            
 
+            # RL action no share
             state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
             
             terminated = False
@@ -54,14 +56,34 @@ class Experiment:
                 actions = self.network_select_action(state)
                 state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
                 score += np.average(reward)
-            print(f"Actions: RL(DDQN) \t Score: {score}")
+            print(f"Actions: RL(DDQN) action no share \t Score: {score}")
             
             if glu_index == 0:
-                self.rl_low = score
+                self.rl_no_share_low = score
             elif glu_index == 1:
-                self.rl_normal = score
+                self.rl_no_share_normal = score
             elif glu_index == 2:
-                self.rl_high = score
+                self.rl_no_share_high = score
+
+            # RL action share
+            state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
+            
+            terminated = False
+            truncated = False
+            score = 0
+
+            while not (terminated or truncated):
+                actions = one_tiemstep_action_share(self.network_select_action(state))
+                state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
+                score += np.average(reward)
+            print(f"Actions: RL(DDQN) action share \t Score: {score}")
+            
+            if glu_index == 0:
+                self.rl_share_low = score
+            elif glu_index == 1:
+                self.rl_share_normal = score
+            elif glu_index == 2:
+                self.rl_share_high = score
 
         if self.use_plot:
             self._plot(plot_location="../../image/experiment/iql", plot_name="Score", experiment_type="score")
@@ -92,6 +114,7 @@ class Experiment:
 
                         self._log(cell_action=cell_action, glu_index=glu_index, log_item=total_hormone)
             
+            # RL action no share
             state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
             
             terminated = False
@@ -104,14 +127,37 @@ class Experiment:
                 hormones = np.sum(state, axis=0)
                 total_hormone += np.sum(hormones[0] + hormones[1]) / self.islet_num  # alpha_hormone + beta_hormone
             total_hormone /= self.env.max_time
-            print(f"Actions: RL(DDQN) \t Hormone: {total_hormone}")
+            print(f"Actions: RL(DDQN) action no share \t Hormone: {total_hormone}")
             
             if glu_index == 0:
-                self.rl_low = total_hormone
+                self.rl_no_share_low = total_hormone
             elif glu_index == 1:
-                self.rl_normal = total_hormone
+                self.rl_no_share_normal = total_hormone
             elif glu_index == 2:
-                self.rl_high = total_hormone
+                self.rl_no_share_high = total_hormone
+
+
+            # RL action share
+            state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
+            
+            terminated = False
+            truncated = False
+            total_hormone = 0
+
+            while not (terminated or truncated):
+                actions = one_tiemstep_action_share(self.network_select_action(state))
+                state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
+                hormones = np.sum(state, axis=0)
+                total_hormone += np.sum(hormones[0] + hormones[1]) / self.islet_num  # alpha_hormone + beta_hormone
+            total_hormone /= self.env.max_time
+            print(f"Actions: RL(DDQN) action share \t Hormone: {total_hormone}")
+            
+            if glu_index == 0:
+                self.rl_share_low = total_hormone
+            elif glu_index == 1:
+                self.rl_share_normal = total_hormone
+            elif glu_index == 2:
+                self.rl_share_high = total_hormone
 
         if self.use_plot:
             self._plot(plot_location="../../image/experiment/iql", plot_name="Hormone", experiment_type="hormone")
@@ -163,14 +209,41 @@ class Experiment:
             total_glucose /= self.env.max_time
             glucose_delta = np.sqrt(np.sum((np.array(glucose_list) - total_glucose)**2) / self.env.max_time)
             glucose_delta_bar = glucose_delta / total_glucose
-            print(f"Actions: RL(DDQN) \t Glucose fluctuation: {glucose_delta_bar}")
+            print(f"Actions: RL(DDQN) action no share \t Glucose fluctuation: {glucose_delta_bar}")
             
             if glu_index == 0:
-                self.rl_low = glucose_delta_bar
+                self.rl_no_share_low = glucose_delta_bar
             elif glu_index == 1:
-                self.rl_normal = glucose_delta_bar
+                self.rl_no_share_normal = glucose_delta_bar
             elif glu_index == 2:
-                self.rl_high = glucose_delta_bar
+                self.rl_no_share_high = glucose_delta_bar
+
+            
+            state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
+            
+            terminated = False
+            truncated = False
+            
+            total_glucose = 0
+            glucose_list = []
+
+            while not (terminated or truncated):
+                actions = one_tiemstep_action_share(self.network_select_action(state))
+                state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
+                total_glucose += info["glucose"] + glucose_epsilon
+                glucose_list.append(info["glucose"] + glucose_epsilon)
+            
+            total_glucose /= self.env.max_time
+            glucose_delta = np.sqrt(np.sum((np.array(glucose_list) - total_glucose)**2) / self.env.max_time)
+            glucose_delta_bar = glucose_delta / total_glucose
+            print(f"Actions: RL(DDQN) action share \t Glucose fluctuation: {glucose_delta_bar}")
+            
+            if glu_index == 0:
+                self.rl_share_low = glucose_delta_bar
+            elif glu_index == 1:
+                self.rl_share_normal = glucose_delta_bar
+            elif glu_index == 2:
+                self.rl_share_high = glucose_delta_bar
 
         if self.use_plot:
             self._plot(plot_location="../../image/experiment/iql", plot_name="Glucose fluctuation", experiment_type="glu_fluc")
@@ -256,14 +329,59 @@ class Experiment:
                     total_synchronization_rho += total_rho
             total_synchronization_rho = abs(total_synchronization_rho) / (self.env.max_time*3/2)
             
-            print(f"Actions: RL(DDQN) \t Synchronization: {total_synchronization_rho}")
+            print(f"Actions: RL(DDQN) action no share \t Synchronization: {total_synchronization_rho}")
             
             if glu_index == 0:
-                self.rl_low = total_synchronization_rho
+                self.rl_no_share_low = total_synchronization_rho
             elif glu_index == 1:
-                self.rl_normal = total_synchronization_rho
+                self.rl_no_share_normal = total_synchronization_rho
             elif glu_index == 2:
-                self.rl_high = total_synchronization_rho
+                self.rl_no_share_high = total_synchronization_rho
+
+
+
+            state, info = self.env.reset(glucose_fix=True, glucose_level=(self.env.glucose_0 + add_glucose))
+            terminated = False
+            truncated = False
+            total_synchronization_rho = 0
+            
+            while not (terminated or truncated):
+                actions = one_tiemstep_action_share(self.network_select_action(state))
+                state, reward, terminated, truncated, info = self.env.step(actions, add_glucose)
+                if self.env.curr_time > (self.env.max_time/2):
+                    alpha_sync = []
+                    beta_sync = []
+                    delta_sync = []
+            
+                    for i in range(self.islet_num):
+                        alpha_sync.append(self.env.phases[i][0])
+                        beta_sync.append(self.env.phases[i][1])
+                        delta_sync.append(self.env.phases[i][2])
+
+                    alpha_sync_arr = np.array(alpha_sync)
+                    beta_sync_arr = np.array(beta_sync)
+                    delta_sync_arr = np.array(delta_sync)
+
+                    alpha_mean = np.mean(alpha_sync)
+                    beta_mean = np.mean(beta_sync)
+                    delta_mean = np.mean(delta_sync)
+
+                    alpha_rho = np.sum(np.exp(1j * (alpha_sync_arr - alpha_mean)))/self.islet_num 
+                    beta_rho = np.sum(np.exp(1j * (beta_sync_arr - beta_mean)))/self.islet_num
+                    delta_rho = np.sum(np.exp(1j * (delta_sync_arr - delta_mean)))/self.islet_num
+
+                    total_rho = alpha_rho + beta_rho + delta_rho
+                    total_synchronization_rho += total_rho
+            total_synchronization_rho = abs(total_synchronization_rho) / (self.env.max_time*3/2)
+            
+            print(f"Actions: RL(DDQN) action share \t Synchronization: {total_synchronization_rho}")
+            
+            if glu_index == 0:
+                self.rl_share_low = total_synchronization_rho
+            elif glu_index == 1:
+                self.rl_share_normal = total_synchronization_rho
+            elif glu_index == 2:
+                self.rl_share_high = total_synchronization_rho
 
         #self._log_save(log_dir="../../logs/iql", log_name="cell_sync")
         if self.use_plot:
@@ -282,7 +400,8 @@ class Experiment:
         plt.scatter(self.human_normal.values(), self.human_high.values(), c='magenta', marker='^', s=100)
         plt.scatter(self.no_interaction_normal.values(), self.no_interaction_high.values(), c='purple', marker='v', s=100)
         plt.scatter(self.grey_normal.values(), self.grey_high.values(), c='grey', alpha=0.2, s=10)
-        plt.scatter(self.rl_normal, self.rl_low, c='gold', marker='*', s=100)
+        plt.scatter(self.rl_no_share_normal, self.rl_no_share_low, c='gold', marker='*', s=100)
+        plt.scatter(self.rl_share_normal, self.rl_share_low, c='cyan', marker='*', s=100)
 
         if experiment_type == "hormone":
             plt.grid(linestyle=':', color="grey")
@@ -313,7 +432,8 @@ class Experiment:
         plt.scatter(self.human_normal.values(), self.human_low.values(), c='magenta', marker='^', s=100)
         plt.scatter(self.no_interaction_normal.values(), self.no_interaction_low.values(), c='purple', marker='v', s=100)
         plt.scatter(self.grey_normal.values(), self.grey_low.values(), c='grey', alpha=0.2, s=10)
-        plt.scatter(self.rl_normal, self.rl_high, c='gold', marker='*', s=100)
+        plt.scatter(self.rl_no_share_normal, self.rl_no_share_high, c='gold', marker='*', s=100)
+        plt.scatter(self.rl_share_normal, self.rl_share_high, c='cyan', marker='*', s=100)
 
         if experiment_type == "hormone":
             plt.grid(linestyle=':', color="grey")
