@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description="CellEnv Training or Test module")
 
 # env
 parser.add_argument("-is", "--islet_num", type=int, default=20, help="Environment Islet number, default=20")
-parser.add_argument("-mt", "--max_time", type=int, default=200, help="Environment Max time (min) per episode, default=200")
+parser.add_argument("-mt", "--max_time", type=int, default=200, help="Environment Max time (min) per episode, default=20")
 parser.add_argument("-g", "--glu_fix", action='store_true', help="Init glucose level fix on, action='store_true'")
 parser.add_argument("-gl", "--glu_level", type=float, default=None, help="Init glucose level value, use when glu_fix is true, default=None")
 parser.add_argument("-eg", "--external_glu", type=float, default=0, help="External glucose every timestep, default=0")
@@ -34,12 +34,12 @@ parser.add_argument("-cu", "--cuda", action='store_true', help="Use cuda, action
 parser.add_argument("-cn", "--cuda_num", type=int, default=0, help="Using cuda number, default=0")
 
 # train
-parser.add_argument("-bs", "--batch_size", type=int, default=256, help="Training batch size, default=256")
-parser.add_argument("-uf", "--target_update_freq", type=int, default=2000, help="Target network update frequency, default=2000")
-parser.add_argument("-gm", "--gamma", type=float, default=0.99, help="Gamma(Reward decay) value, default=0.95")
+parser.add_argument("-bs", "--batch_size", type=int, default=64, help="Training batch size, default=64")
+parser.add_argument("-uf", "--target_update_freq", type=int, default=500, help="Target network update frequency, default=500")
+parser.add_argument("-gm", "--gamma", type=float, default=0.995, help="Gamma(Reward decay) value, default=0.995")
 parser.add_argument("-lr", "--learning_rate", type=float, default=1e-4, help="Optimizer learning rate, default=1e-4")
-parser.add_argument("-mc", "--memory_cap", type=int, default=2e5, help="Replay memory size, default=200_000")
-parser.add_argument("-me", "--max_epi", type=int, default=1000, help="Maximum training episode, default=1000")
+parser.add_argument("-mc", "--memory_cap", type=int, default=1e5, help="Replay memory size, default=100_000")
+parser.add_argument("-me", "--max_epi", type=int, default=10000, help="Maximum training episode, default=10000")
 parser.add_argument("-el", "--eps_linear", action='store_true', help="Using epsilon decay as linear. If not, epsilon will decay exponentially, action='store_true'")
 parser.add_argument("-ed", "--eps_decay", type=float, default=0.995, help="Epsilon decay on exponential decay epsilon")
 
@@ -56,10 +56,8 @@ parser.add_argument("-as", "--action_share", action='store_true', help="Using ac
 
 
 if __name__=="__main__":
-    args = parser.parse_args()
-    wandb.init(project="Tripartite Cell IQL - Server")
+    args = parser.parse_args()    
     seed_everything(args.seed)
-    wandb.config.update(args)
     env = CellEnv(
         islet_num=args.islet_num,
         max_time=args.max_time,
@@ -72,6 +70,9 @@ if __name__=="__main__":
         cuda_num=args.cuda_num)
 
     if args.train:
+        wandb.init(project="Tripartite Cell IQL - Server network 64")
+        wandb.config.update(args)
+
         agent.train(
             batch_size=args.batch_size,
             target_update_freq=args.target_update_freq,
