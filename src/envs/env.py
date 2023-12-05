@@ -17,9 +17,9 @@ class CellEnv(gym.Env):
         self.observation_space = spaces.Box(low=0.0, high=40.0, shape=(self.islet_num, int(self.cell_num + 1)))
         self.action_space = spaces.MultiDiscrete(np.full((self.islet_num, self.cell_num), self.cell_interaction_type_num))
         self.state = None
-        self.glucose_0 = 4.     # default glucose level
+        self.glucose_0 = 4.
         self.max_time = max_time
-        self.kapa = 0.4 # changable
+        self.kapa = 0.4
         self.eta = 5
         
         # Env parameters
@@ -80,8 +80,6 @@ class CellEnv(gym.Env):
             alpha_to_beta_action, alpha_to_delta_action = self._interaction(alpha_action)
             beta_to_delta_action, beta_to_alpha_action = self._interaction(beta_action)
             delta_to_alpha_action, delta_to_beta_action = self._interaction(delta_action)
-
-            #print(f"actions: {alpha_to_beta_action, alpha_to_delta_action, beta_to_delta_action, beta_to_alpha_action, delta_to_alpha_action, delta_to_beta_action}")
 
             alpha_phase_delta = self.phase_oscilation(0, self.phases[i], self.amps[i], self.glucose, beta_to_alpha_action, delta_to_alpha_action)
             beta_phase_delta = self.phase_oscilation(1, self.phases[i], self.amps[i], self.glucose, delta_to_beta_action, alpha_to_beta_action)
@@ -153,7 +151,6 @@ class CellEnv(gym.Env):
         
     def _phase_modulation(self, cell_num, glucose):
         mu = 0.1
-        #mu = 0.5
         if cell_num != 0:
             mu *= -1
             
