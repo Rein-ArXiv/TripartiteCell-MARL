@@ -53,5 +53,3 @@ class Softmax(policy):
         cdf = np.cumsum(pi)
         s = np.random.random()
         return np.where(s < cdf)[0][0]
-
-class Thompson
