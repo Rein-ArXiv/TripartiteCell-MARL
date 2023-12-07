@@ -1,6 +1,7 @@
 import pymc as pm
 import numpy as np
-
+import torch.nn as nn
+import torch.nn.functional as F
 
 class MultiArmedBandit(object):
     """
@@ -35,8 +36,25 @@ class GaussianBandit(MultiArmedBandit):
         self.optimal = np.argmax(self.action_values)
 
     def pull(self, action):
-        return (np.random.normal(self.action_values[action], 0.05),
+        return (np.random.normal(self.action_values[action]),
                 action == self.optimal)
+
+class NeuralNetworkBandit(nn.Module):
+    def __init__(self, k):
+        super(NeuralNetworkBandit, self).__init__()
+        self.input_layer = nn.Linear(1, 128)
+        self.hidden_layer = nn.Linear(128, 128)
+        self.output_layer = nn.Linear(128, k)
+
+    def forward(self):
+        self.action_values = F.relu(self.input_layer(1))
+        self.action_values = F.relu(self.hidden_layer(self.action_values))
+        self.action_values = self.output_layer(self.action_values)
+        return self.action_values
+
+    def reset(self):
+        self.reset_parameters()
+
 
 
 class BinomialBandit(MultiArmedBandit):

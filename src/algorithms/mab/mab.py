@@ -9,7 +9,7 @@ from .policy import StaticEpsilonGreedy, UCB, Softmax
 
 
 class MAB(object):
-    def __init__(self, env, agent, bandit, policy, gamma=None, is_train=None):
+    def __init__(self, env, agent, bandit, policy, gamma=0.95, is_train=None):
         self.env = env
         self.islet_num = env.islet_num
         self.reward_mode = env.reward_mode
@@ -17,11 +17,11 @@ class MAB(object):
         self.alpha_agent = agent(self.islet_num, bandit, policy, gamma=gamma)
         self.beta_agent = agent(self.islet_num, bandit, policy, gamma=gamma)
         self.delta_agent = agent(self.islet_num, bandit, policy, gamma=gamma)
-
         assert is_train != None, "Please select an execution mode: [is_train=True, is_train=False]"
         self.is_train = is_train
 
     def train(self,
+        max_train_num=100,
         max_epi=1000,
         #eps_linear=False,
         #eps_decay=0.995,
@@ -36,64 +36,70 @@ class MAB(object):
         #self.min_eps = 0.01
         #self.eps = self.max_eps
         #self.eps_decay = eps_decay
-        
-        self.update_count = 0
-        self.episode = 0
-
-        self.alpha_agent.reset()
-        self.beta_agent.reset()
-        self.delta_agent.reset()
-
-        max_frame = int((max_epi + 1) * self.env.max_time)
-        terminated = True
-        truncated = True
-
         print("--Train Start--")
-        for frame_idx in range(max_frame):
-            if terminated or truncated:
-                state, info = self.env.reset()
-                terminated = False
-                truncated = False
-                
-                if (self.episode != 0):
-                    #wandb.log({"Episode Reward": episode_reward})
-                    print(f"Episode: {self.episode}/{max_epi} \tEpisode Reward: {episode_reward}")
-                    #current_episode_avg_reward[self.episode % 10] = episode_reward
-                self.episode += 1
-                episode_reward = 0
-
-                                   
-            actions = self._select_action()
-
-            next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
-            self.alpha_agent.observe(reward, self.env.reward_mode=="local")
-            self.beta_agent.observe(reward, self.env.reward_mode=="local")
-            self.delta_agent.observe(reward, self.env.reward_mode=="local")
-
-            if self.env.reward_mode == "global":
-                episode_reward += reward
-            elif self.env.reward_mode == "local":
-                episode_reward += np.average(reward)
-
-            '''
-            if (terminated or truncated) and (int(self.episode % 10) == 0):
-                if (np.average(current_episode_avg_reward) > np.average(best_episode_avg_reward)):
-                    best_episode_avg_reward = np.copy(current_episode_avg_reward)
-                    self._param_save(param_location=param_location, param_suffix=param_suffix)
-                self._param_save(param_location=param_location, param_suffix=f"{param_suffix}_final")
-            '''
-            state = next_state
-
-            #if eps_linear:
-                #self.eps = max(self.min_eps, self.max_eps - (self.max_eps - self.min_eps) * (frame_idx / max_frame))
-            #else:
-                #self.eps = self.max_eps * (self.eps_decay ** self.episode)
-            #wandb.log({"Epsilon": self.eps})
-
-            if int(self.episode) == int(max_epi+1):
-                print("The train reached the maximum episode. The train has ended.")
-                break
         
+        cell_action_record = []
+
+        for i in range(max_train_num):
+            self.update_count = 0
+            self.episode = 0
+
+            self.alpha_agent.reset()
+            self.beta_agent.reset()
+            self.delta_agent.reset()
+
+            max_frame = int((max_epi + 1) * self.env.max_time)
+            terminated = True
+            truncated = True
+
+            for frame_idx in range(max_frame):
+                if terminated or truncated:
+                    state, info = self.env.reset()
+                    terminated = False
+                    truncated = False
+                    
+                    if (self.episode != 0):
+                        #wandb.log({"Episode Reward": episode_reward})
+                        print(f"Episode: {self.episode}/{max_epi} \tEpisode Reward: {episode_reward}")
+                        #current_episode_avg_reward[self.episode % 10] = episode_reward
+                    self.episode += 1
+                    episode_reward = 0
+
+
+                if not (truncated or terminated):
+                    actions = self._get_action()
+                    actions = np.tile(actions,(20, 1))
+                    next_state, reward, terminated, truncated, info = self.step(actions, external_glu)
+
+                    if self.env.reward_mode == "global":
+                        episode_reward += reward
+                    elif self.env.reward_mode == "local":
+                        episode_reward += np.average(reward)
+                    self.alpha_agent.observe(reward, self.env.reward_mode=="local")
+                    self.beta_agent.observe(reward, self.env.reward_mode=="local")
+                    self.delta_agent.observe(reward, self.env.reward_mode=="local")
+
+
+                '''
+                if (terminated or truncated) and (int(self.episode % 10) == 0):
+                    if (np.average(current_episode_avg_reward) > np.average(best_episode_avg_reward)):
+                        best_episode_avg_reward = np.copy(current_episode_avg_reward)
+                        self._param_save(param_location=param_location, param_suffix=param_suffix)
+                    self._param_save(param_location=param_location, param_suffix=f"{param_suffix}_final")
+                '''
+
+                #if eps_linear:
+                    #self.eps = max(self.min_eps, self.max_eps - (self.max_eps - self.min_eps) * (frame_idx / max_frame))
+                #else:
+                    #self.eps = self.max_eps * (self.eps_decay ** self.episode)
+                #wandb.log({"Epsilon": self.eps})
+
+            cell_action_record.append([self.alpha_agent._value_estimates.argmax(), self.beta_agent._value_estimates.argmax(), self.delta_agent._value_estimates.argmax()])
+            print(f"Action: {self.alpha_agent._value_estimates.argmax()}, {self.beta_agent._value_estimates.argmax()}, {self.delta_agent._value_estimates.argmax()}")
+
+        with open(file="../../../parameters/mab/epsilon_greedy_cell_action.pickle", mode="wb") as f:
+            pickle.dump(cell_action_record, f)
+
     def step(self, actions, external_glucose):
         next_state, reward, terminated, truncated, info = self.env.step(actions, external_glucose)
         if self.is_train:
@@ -130,8 +136,8 @@ class MAB(object):
 
         return np.array(action_list)
 
-    def _get_action(self, i):
-        alpha_action = self.alpha_agent.choose(i)
-        beta_action = self.beta_agent.choose(i)
-        delta_action = self.delta_agent.choose(i)
+    def _get_action(self):
+        alpha_action = self.alpha_agent.choose()
+        beta_action = self.beta_agent.choose()
+        delta_action = self.delta_agent.choose()
         return alpha_action, beta_action, delta_action

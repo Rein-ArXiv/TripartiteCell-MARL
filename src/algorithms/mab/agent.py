@@ -17,7 +17,7 @@ class Agent(object):
         self._value_estimates = prior*np.ones(self.k)
         self.action_attempts = np.zeros(self.k, dtype=int)
         self.t = 0
-        self.last_action = np.zeros(islet_num, dtype=int)
+        self.last_action = None
 
     def __str__(self):
         return 'f/{}'.format(str(self.policy))
@@ -31,27 +31,26 @@ class Agent(object):
         self.last_action = np.zeros(self.islet_num, dtype=int)
         self.t = 0
 
-    def choose(self, i):
+    def choose(self):
         action = self.policy.choose(self)
-        self.last_action[i] = action
+        self.last_action = action
         return action
 
     def observe(self, reward, local):
-        for i in range(self.islet_num):
-            self.action_attempts[self.last_action[i]] += 1
+        self.action_attempts[self.last_action] += 1
 
-            if self.gamma is None:
-                g = 1 / self.action_attempts[self.last_action[i]]
-            else:
-                g = self.gamma
-            q = self._value_estimates[self.last_action[i]]
+        if self.gamma is None:
+            g = 1 / self.action_attempts[self.last_action]
+        else:
+            g = self.gamma
+        q = self._value_estimates[self.last_action]
 
-            if local:
-                self._value_estimates[self.last_action[i]] += g*(reward[i] - q)
-                self.t += 1
-            else:
-                self._value_estimates[self.last_action[i]] += g*(reward - q)
-                self.t += 1
+        if local:
+            self._value_estimates[self.last_action] += g*(np.average(reward) - q)
+            self.t += 1
+        else:
+            self._value_estimates[self.last_action] += g*(reward - q)
+            self.t += 1
 
     @property
     def value_estimates(self):
